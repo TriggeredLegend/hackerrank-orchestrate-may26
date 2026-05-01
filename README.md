@@ -1,23 +1,159 @@
 # HackerRank Orchestrate
 
-Starter repository for the **HackerRank Orchestrate** 24-hour hackathon (May 1–2, 2026).
+A terminal-based, offline multi-domain support triage agent for the **HackerRank Orchestrate** hackathon (May 1–2, 2026). The agent handles support tickets across three product ecosystems — **HackerRank**, **Claude**, and **Visa** — using only the local support corpus under `data/`.
 
-Build a terminal-based AI agent that triages real support tickets across three product ecosystems; **HackerRank**, **Claude**, and **Visa** — using only the support corpus shipped in this repo.
+Read [`problem_statement.md`](./problem_statement.md) for the full task spec and [`evalutation_criteria.md`](./evalutation_criteria.md) for how submissions are scored.
 
-Read [`problem_statement.md`](./problem_statement.md) for the full task spec, input/output schema, and allowed values, and [`evalutation_criteria.md`](./evalutation_criteria.md) for how submissions are scored.
+---
+
+## Quick Setup
+
+### Prerequisites
+
+- Python 3.9 or later
+- pip
+
+### Install
+
+```bash
+git clone https://github.com/TriggeredLegend/hackerrank-orchestrate-may26.git
+cd hackerrank-orchestrate-may26
+pip install rank-bm25 pandas
+```
+
+No API keys or network access are needed — the agent runs entirely offline.
+
+### Run
+
+```bash
+cd code
+
+# Process support_tickets/support_tickets.csv → support_tickets/output.csv
+python main.py
+
+# Quick validation against sample_support_tickets.csv
+python main.py --sample
+
+# Custom paths
+python main.py --input ../support_tickets/support_tickets.csv \
+               --output ../support_tickets/output.csv \
+               --data-dir ../data
+```
+
+See [`code/README.md`](./code/README.md) for the full CLI reference.
+
+---
+
+## Approach Overview
+
+### Pipeline
+
+Each ticket passes through four stages in sequence:
+
+```
+Issue text + Subject + Company
+        │
+        ▼
+1. Safety Guard       — detect prompt-injection / adversarial text → invalid
+        │
+        ▼
+2. BM25 Retrieval     — rank all 774 corpus docs; return top-5 relevant
+        │
+        ▼
+3. Escalation Policy  — regex rules for billing, fraud, outages, etc. → escalated
+        │
+        ▼
+4. Response Composer  — extract best paragraphs from retrieved docs → replied
+```
+
+### Retrieval (`retriever.py`)
+
+All 774 markdown files in `data/` (HackerRank help center, Claude Help Center, Visa support) are loaded at startup, stripped of YAML front-matter, tokenized, and indexed with **BM25Okapi** from the `rank_bm25` library.
+
+- For each ticket the query is `{issue} {subject}`.
+- When a `company` label is present, company-filtered results are preferred when the top BM25 score exceeds a confidence threshold; otherwise the corpus-wide ranking is used.
+- A second pass of paragraph-level BM25 extracts the most relevant snippets from the top documents, filtering out noise (image links, navigation bullets, metadata lines).
+
+### Classification (`classifier.py`)
+
+Three rule sets run in order:
+
+| Rule set | Method | Output |
+|----------|--------|--------|
+| **Invalid / injection** | Keyword phrases + regex | `request_type = invalid` |
+| **Escalation** | Regex patterns on issue + subject text | `status = escalated` |
+| **Request type** | Keyword matching | `product_issue / feature_request / bug` |
+| **Product area** | Keyword matching + doc path fallback | e.g. `screen`, `privacy`, `general_support` |
+
+Escalation triggers include: billing/refunds, fraud, identity theft, score modification, security vulnerabilities (bug bounty), account access restoration, subscription changes, widespread platform outages, and legal/infosec compliance requests.
+
+### Response Generation (`agent.py`)
+
+For tickets that pass the escalation check, the agent composes a response by:
+
+1. Extracting up to 3 high-quality paragraphs from the top-retrieved documents.
+2. Cleaning markdown (removing images, link syntax, headers).
+3. Appending the source URL or document title as a citation.
+
+Escalated tickets receive a standard human-handoff message. Invalid tickets receive a scoped out-of-scope reply.
+
+### Logging (`main.py`)
+
+Every run appends session-start and per-turn entries to `$HOME/hackerrank_orchestrate/log.txt` following the AGENTS.md §5 format.
+
+---
+
+## Repository Layout
+
+```
+.
+├── AGENTS.md                       # Rules for AI coding tools + transcript logging
+├── problem_statement.md            # Full task description and I/O schema
+├── evalutation_criteria.md         # Scoring rubric
+├── README.md                       # You are here
+├── code/                           # Agent implementation
+│   ├── main.py                     #   CLI entry point
+│   ├── agent.py                    #   Core TriageAgent
+│   ├── retriever.py                #   BM25 corpus retriever
+│   ├── classifier.py               #   Escalation + classification rules
+│   ├── requirements.txt            #   Python dependencies
+│   └── README.md                   #   Detailed code docs
+├── data/                           # Local-only support corpus (no network needed)
+│   ├── hackerrank/                 #   HackerRank help center (markdown)
+│   ├── claude/                     #   Claude Help Center export (markdown)
+│   └── visa/                       #   Visa consumer + small-business support (markdown)
+└── support_tickets/
+    ├── sample_support_tickets.csv  # Inputs + expected outputs (for development)
+    ├── support_tickets.csv         # Inputs only (run your agent on these)
+    └── output.csv                  # Agent predictions (generated by main.py)
+```
+
+---
+
+## Output Format
+
+For each input row the agent writes five columns:
+
+| Column | Allowed values |
+|--------|---------------|
+| `status` | `replied`, `escalated` |
+| `product_area` | most relevant support category / domain area |
+| `response` | user-facing answer grounded in the provided corpus |
+| `justification` | concise explanation of the routing/answering decision |
+| `request_type` | `product_issue`, `feature_request`, `bug`, `invalid` |
 
 ---
 
 ## Contents
 
-1. [Repository layout](#repository-layout)
-2. [What you need to build](#what-you-need-to-build)
-3. [Where your code goes](#where-your-code-goes)
-4. [Quickstart](#quickstart)
-5. [Chat transcript logging](#chat-transcript-logging)
+1. [Quick Setup](#quick-setup)
+2. [Approach Overview](#approach-overview)
+3. [Repository Layout](#repository-layout)
+4. [Output Format](#output-format)
+5. [Chat Transcript Logging](#chat-transcript-logging)
 6. [Submission](#submission)
-7. [Judge interview](#judge-interview)
-8. [Evaluation criteria](#evaluation-criteria)
+7. [Judge Interview](#judge-interview)
+8. [Evaluation Criteria](#evaluation-criteria)
 
 ---
 
