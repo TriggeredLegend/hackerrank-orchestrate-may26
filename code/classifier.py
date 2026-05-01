@@ -41,14 +41,25 @@ _INVALID_KEYWORDS = {
 
 # Patterns that are checked as whole-word / phrase matches (not substrings)
 _INVALID_PATTERNS = [
-    re.compile(r"\bactor\s+in\b", re.I),          # "actor in Iron Man"
-    re.compile(r"\bwhat\s+movie\b", re.I),
-    re.compile(r"^thank\s+you\b", re.I),           # bare "thank you" as entire message
-    re.compile(r"^thanks\b", re.I),
-    re.compile(r"^(hi|hello|hey)\s*$", re.I),      # empty greeting
-    re.compile(r"\bweather\s+forecast\b", re.I),
-    re.compile(r"\brecipe\s+for\b", re.I),
+    re.compile(r"\bactor\s+in\s+(iron\s+man|a\s+movie|the\s+film)\b", re.I),
+    re.compile(r"\bwhat\s+(movie|film)\s+(is|was)\b", re.I),
 ]
+
+# Short trivial-only messages (greetings, thanks, etc.) — matched only when
+# the combined issue+subject is very short, ensuring legit tickets that open
+# politely are not wrongly classified as invalid.
+_TRIVIAL_PHRASES = re.compile(
+    r"^\s*(thank\s+you[\s!.,]*|thanks[\s!.,]*|hello[\s!.,]*|hi[\s!.,]*|"
+    r"hey[\s!.,]*|no\s+issue[\s!.,]*|none[\s!.,]*)\s*$",
+    re.I,
+)
+
+# Short gratitude/closing messages that are not support requests
+_SHORT_GRATITUDE_RE = re.compile(
+    r"^(thank\s+you|thanks)\b",
+    re.I,
+)
+_MAX_TRIVIAL_LENGTH = 60   # chars; combined issue+subject under this length
 
 _INVALID_TOPICS = {
     "actor in iron man", "movie", "recipe", "weather",
@@ -179,6 +190,15 @@ def classify_request_type(issue: str, subject: str) -> str:
     for pat in _INVALID_PATTERNS:
         if pat.search(combined_raw):
             return "invalid"
+    # Trivial-only short messages (greetings, pure thanks, etc.)
+    if _TRIVIAL_PHRASES.match(combined_raw.strip()):
+        return "invalid"
+    # Short gratitude messages (e.g. "Thank you for helping me")
+    if (
+        len(combined_raw.strip()) <= _MAX_TRIVIAL_LENGTH
+        and _SHORT_GRATITUDE_RE.match(combined_raw.strip())
+    ):
+        return "invalid"
 
     # Check feature request
     for kw in _FEATURE_KEYWORDS:

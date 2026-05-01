@@ -153,9 +153,13 @@ def run_agent(input_path: str, output_path: str, data_dir: str, verbose: bool = 
                 "justification": f"Processing error: {exc}",
                 "request_type": "product_issue",
             }
-            if verbose:
-                print(f"  [!] Error on row {i}: {exc}", file=sys.stderr)
-                traceback.print_exc()
+            # Always log the traceback, but only print to stdout if verbose
+            import io
+            tb_buf = io.StringIO()
+            traceback.print_exc(file=tb_buf)
+            tb_str = tb_buf.getvalue()
+            print(f"  [!] Error on row {i}: {exc}", file=sys.stderr)
+            print(tb_str, file=sys.stderr)
 
         output_row = {
             "Issue": issue,

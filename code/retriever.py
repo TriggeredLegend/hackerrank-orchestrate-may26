@@ -31,6 +31,11 @@ def _tokenize(text: str) -> List[str]:
     return tokens
 
 
+# Minimum BM25 score for company-specific filtering to be trusted.
+# Below this threshold the corpus-wide ranking is used instead.
+_MIN_COMPANY_SCORE_THRESHOLD = 0.5
+
+
 def _extract_metadata(text: str, path: str) -> Dict:
     """Pull title and source_url from YAML front-matter if present."""
     meta = {"title": "", "source_url": "", "path": path}
@@ -124,7 +129,7 @@ class Retriever:
                 (s, d) for s, d in ranked if d["company"] == company_filter
             ]
             # Use company-specific if top score is meaningful
-            if company_hits and company_hits[0][0] > 0.5:
+            if company_hits and company_hits[0][0] > _MIN_COMPANY_SCORE_THRESHOLD:
                 return [d for _, d in company_hits[:top_k]]
 
         # Fall back to global ranking
